@@ -284,7 +284,10 @@ jobs:
                 PACKAGE_VERSION="$CI_PACKAGE_VERSION" ./scripts/build-pacman.sh
                 pkg_file="$(find dist -maxdepth 1 -name 'codex-desktop-*.pkg.tar.*' -print -quit)"
                 test -n "$pkg_file"
-                test "$(stat -c '%s' "$pkg_file")" -gt 100000000
+                # pacman's .pkg.tar.zst recompresses the already-compressed DMG payload more efficiently
+                # than deb/rpm/AppImage. Keep a lower guard than the raw app artifact, but high
+                # enough to reject the old fixture-sized 4-5MB release packages.
+                test "$(stat -c '%s' "$pkg_file")" -gt 40000000
               '"'"'
             '
 
