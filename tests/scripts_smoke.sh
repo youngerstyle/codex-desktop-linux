@@ -147,6 +147,13 @@ test_common_helper_sourcing() {
     ensure_file_exists "$probe_file" "probe file"
 }
 
+test_nix_crates_static_cdn_override_contract() {
+    info "Checking Nix Rust crate vendoring uses the static crates.io CDN"
+    assert_contains "$REPO_DIR/flake.nix" "https://static.crates.io/crates"
+    assert_contains "$REPO_DIR/flake.nix" "crates.io/api/v1/.../download"
+    assert_contains "$REPO_DIR/flake.nix" "codexComputerUseBinaries = rustPlatform.buildRustPackage"
+}
+
 test_package_payload_permission_normalization() {
     info "Checking package payload permission normalization"
     local root="$TMP_DIR/package-permissions"
@@ -242,7 +249,10 @@ SCRIPT
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/scripts/patches/core/package/deb/README.md"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/linux-features/README.md"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/linux-features/example-feature/feature.json"
-    assert_file_not_exists "$pkg_root/opt/codex-desktop/update-builder/linux-features/features.json"
+    assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/linux-features/features.json"
+    assert_contains "$pkg_root/opt/codex-desktop/update-builder/linux-features/features.json" "computer-use-linux"
+    assert_contains "$pkg_root/opt/codex-desktop/update-builder/linux-features/features.json" "open-target-discovery"
+    assert_contains "$pkg_root/opt/codex-desktop/update-builder/linux-features/features.json" "remote-control-ui"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/node-runtime/bin/node"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/Cargo.toml"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/computer-use-linux/Cargo.toml"
@@ -4659,6 +4669,7 @@ EOF
 
 main() {
     test_common_helper_sourcing
+    test_nix_crates_static_cdn_override_contract
     test_package_payload_permission_normalization
     test_deb_builder_smoke
     test_update_builder_preserves_enabled_linux_features_config
