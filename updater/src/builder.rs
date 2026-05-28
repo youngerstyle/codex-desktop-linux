@@ -59,6 +59,7 @@ const PACMAN_PACKAGE_SUFFIXES: &[&str] = &[
     ".pkg.tar.lz4",
     ".pkg.tar.lz5",
 ];
+const DEFAULT_BUNDLED_LINUX_FEATURES: &str = "remote-mobile-control,remote-control-ui";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Paths to the temporary workspace and generated package produced by a rebuild.
@@ -90,10 +91,7 @@ pub async fn build_update(
         Command::new(workspace.bundle_dir.join("install.sh"))
             .arg(dmg_path)
             .env("CODEX_INSTALL_DIR", &workspace.app_dir)
-            .env(
-                "CODEX_LINUX_FEATURES",
-                "computer-use-linux,open-target-discovery,remote-control-ui",
-            )
+            .env("CODEX_LINUX_FEATURES", DEFAULT_BUNDLED_LINUX_FEATURES)
             .env("CODEX_LINUX_ENABLE_COMPUTER_USE_UI", "1")
             .env(
                 "CODEX_PATCH_REPORT_JSON",
@@ -121,10 +119,7 @@ pub async fn build_update(
     run_and_log(
         Command::new(&build_script)
             .env("PACKAGE_VERSION", candidate_version)
-            .env(
-                "CODEX_LINUX_FEATURES",
-                "computer-use-linux,open-target-discovery,remote-control-ui",
-            )
+            .env("CODEX_LINUX_FEATURES", DEFAULT_BUNDLED_LINUX_FEATURES)
             .env("CODEX_LINUX_ENABLE_COMPUTER_USE_UI", "1")
             .env("APP_DIR_OVERRIDE", &workspace.app_dir)
             .env("DIST_DIR_OVERRIDE", &workspace.dist_dir)
@@ -458,7 +453,7 @@ mod tests {
             FakePackageOutput::Deb => {
                 r#"#!/bin/bash
 set -euo pipefail
-test "${CODEX_LINUX_FEATURES:-}" = "computer-use-linux,open-target-discovery,remote-control-ui"
+test "${CODEX_LINUX_FEATURES:-}" = "remote-mobile-control,remote-control-ui"
 test "${CODEX_LINUX_ENABLE_COMPUTER_USE_UI:-}" = "1"
 mkdir -p "${DIST_DIR_OVERRIDE}"
 touch "${DIST_DIR_OVERRIDE}/codex-desktop_${PACKAGE_VERSION}_amd64.deb"
@@ -621,7 +616,7 @@ touch "${DIST_DIR_OVERRIDE}/codex-desktop-${VER}-1-x86_64.pkg.tar.zst"
             bundle_root.join("install.sh"),
             r#"#!/bin/bash
 set -euo pipefail
-test "${CODEX_LINUX_FEATURES:-}" = "computer-use-linux,open-target-discovery,remote-control-ui"
+test "${CODEX_LINUX_FEATURES:-}" = "remote-mobile-control,remote-control-ui"
 test "${CODEX_LINUX_ENABLE_COMPUTER_USE_UI:-}" = "1"
 mkdir -p "${CODEX_INSTALL_DIR}"
 echo launcher > "${CODEX_INSTALL_DIR}/start.sh"

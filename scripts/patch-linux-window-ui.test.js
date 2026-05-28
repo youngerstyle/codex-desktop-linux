@@ -73,6 +73,11 @@ const {
   sourceInfo,
 } = require("./lib/build-info.js");
 const {
+  enabledLinuxFeatureIds,
+  enabledLinuxFeatureIdsFromEnv,
+  defaultBundledLinuxFeatureIds,
+} = require("./lib/linux-features.js");
+const {
   applyBrowserAnnotationScreenshotPatch,
   applyPersistentRateLimitFooterPatch,
   applyLinuxAppServerFeatureEnablementPatch,
@@ -273,6 +278,37 @@ test("Linux target context parses distro, package, and desktop details", () => {
   }
 });
 
+test("CODEX_LINUX_FEATURES env drives Linux feature activation", () => {
+  assert.deepEqual(defaultBundledLinuxFeatureIds(), ["remote-mobile-control", "remote-control-ui"]);
+
+  assert.deepEqual(
+    enabledLinuxFeatureIdsFromEnv({
+      CODEX_LINUX_FEATURES: "remote-mobile-control, remote-control-ui,remote-mobile-control",
+    }),
+    ["remote-mobile-control", "remote-control-ui"],
+  );
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-linux-features-env-"));
+  try {
+    const featuresRoot = path.join(tempRoot, "linux-features");
+    for (const id of ["remote-mobile-control", "remote-control-ui"]) {
+      fs.mkdirSync(path.join(featuresRoot, id), { recursive: true });
+      fs.writeFileSync(path.join(featuresRoot, id, "feature.json"), JSON.stringify({ id }), "utf8");
+    }
+    fs.writeFileSync(path.join(featuresRoot, "features.example.json"), JSON.stringify({ enabled: [] }), "utf8");
+
+    assert.deepEqual(
+      enabledLinuxFeatureIds({
+        featuresRoot,
+        env: { CODEX_LINUX_FEATURES: "remote-mobile-control,remote-control-ui" },
+      }),
+      ["remote-mobile-control", "remote-control-ui"],
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("build info captures DMG hash, features, distro profile, and source revision", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-build-info-"));
   try {
@@ -313,6 +349,7 @@ test("build info captures DMG hash, features, distro profile, and source revisio
         CODEX_LINUX_SOURCE_COMMIT: "abcdef1234567890",
         CODEX_LINUX_SOURCE_BRANCH: "main",
         CODEX_LINUX_SOURCE_REMOTE: "https://ghp_secret-token@github.com/example/codex-desktop-linux.git",
+        CODEX_LINUX_FEATURES: "remote-mobile-control,remote-control-ui",
         SOURCE_DATE_EPOCH: "1710000000",
       },
       linuxTarget: detectLinuxTargetContext({
@@ -334,7 +371,7 @@ test("build info captures DMG hash, features, distro profile, and source revisio
     assert.equal(info.source.remote, "https://github.com/example/codex-desktop-linux.git");
     assert.equal(info.packageProfile.id, "debian-family");
     assert.equal(info.packageProfile.packageManager, "apt");
-    assert.deepEqual(info.linuxFeatures.enabled, ["read-aloud", "zed-opener"]);
+    assert.deepEqual(info.linuxFeatures.enabled, ["remote-mobile-control", "remote-control-ui"]);
     assert.equal(info.linuxFeatures.configPath, undefined);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
