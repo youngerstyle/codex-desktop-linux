@@ -262,34 +262,42 @@ jobs:
       - name: Build and capture pacman package in Arch Linux
         run: |
           set -euo pipefail
+          cat > /tmp/build-pacman-release.sh <<'EOF'
+          set -euo pipefail
+          pacman -Syu --noconfirm --needed rust nodejs npm zstd sudo
+          useradd -m builder
+          chown -R builder:builder /work
+          runuser -u builder -- /work/.github/scripts/build-pacman-release-inner.sh
+          EOF
+
+          mkdir -p .github/scripts
+          cat > .github/scripts/build-pacman-release-inner.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd /work
+          rm -rf codex-app dist
+          tar -xzf codex-app.tar.gz
+          test -x codex-app/start.sh
+          test -f codex-app/resources/app.asar
+
+          cargo build --release -p codex-update-manager
+          PACKAGE_VERSION="$CI_PACKAGE_VERSION" ./scripts/build-pacman.sh
+          pkg_file="$(find dist -maxdepth 1 -name 'codex-desktop-*.pkg.tar.*' -print -quit)"
+          test -n "$pkg_file"
+          # pacman's .pkg.tar.zst recompresses the already-compressed DMG payload more efficiently
+          # than deb/rpm/AppImage. Keep a lower guard than the raw app artifact, but high
+          # enough to reject the old fixture-sized 4-5MB release packages.
+          test "$(stat -c '%s' "$pkg_file")" -gt 40000000
+          EOF
+          chmod +x .github/scripts/build-pacman-release-inner.sh
+
           docker run --rm \
             -e CI_PACKAGE_VERSION="$CI_PACKAGE_VERSION" \
             -v "$PWD:/work" \
+            -v /tmp/build-pacman-release.sh:/build-pacman-release.sh:ro \
             -w /work \
             archlinux:base-devel \
-            bash -lc '
-              set -euo pipefail
-              pacman -Syu --noconfirm --needed rust nodejs npm zstd sudo
-              useradd -m builder
-              chown -R builder:builder /work
-
-              runuser -u builder -- bash -lc '"'"'
-                set -euo pipefail
-                rm -rf codex-app dist
-                tar -xzf codex-app.tar.gz
-                test -x codex-app/start.sh
-                test -f codex-app/resources/app.asar
-
-                cargo build --release -p codex-update-manager
-                PACKAGE_VERSION="$CI_PACKAGE_VERSION" ./scripts/build-pacman.sh
-                pkg_file="$(find dist -maxdepth 1 -name 'codex-desktop-*.pkg.tar.*' -print -quit)"
-                test -n "$pkg_file"
-                # pacman's .pkg.tar.zst recompresses the already-compressed DMG payload more efficiently
-                # than deb/rpm/AppImage. Keep a lower guard than the raw app artifact, but high
-                # enough to reject the old fixture-sized 4-5MB release packages.
-                test "$(stat -c '%s' "$pkg_file")" -gt 40000000
-              '"'"'
-            '
+            bash /build-pacman-release.sh
 
       - name: Upload pacman artifact
         uses: actions/upload-artifact@v4
