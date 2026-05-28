@@ -77,21 +77,121 @@ jobs:
             echo "make_latest=$make_latest"
           } >> "$GITHUB_OUTPUT"
 
-  build-deb:
-    name: Build Debian package
+
+  build-app:
+    name: Build app from upstream DMG
     runs-on: ubuntu-latest
     needs: prepare-release
+    timeout-minutes: 60
+    env:
+      UPSTREAM_DMG_URL: https://persistent.oaistatic.com/codex-app-prod/Codex.dmg
+      UPSTREAM_DMG_PATH: /tmp/codex-upstream-release/Codex.dmg
+      DMG_CACHE_SCHEMA_VERSION: v1
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create minimal packaged app fixture
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install app build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full make g++ python3 curl gzip
+
+      - name: Capture upstream DMG metadata
+        id: upstream-metadata
+        run: |
+          set -euo pipefail
+          headers_file="$(mktemp)"
+          trap 'rm -f "$headers_file"' EXIT
+          curl -fsSLI "$UPSTREAM_DMG_URL" > "$headers_file"
+          last_modified="$(awk 'BEGIN{IGNORECASE=1} /^last-modified:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); print; exit}' "$headers_file")"
+          etag="$(awk 'BEGIN{IGNORECASE=1} /^etag:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); gsub(/"/,""); print; exit}' "$headers_file")"
+          content_length="$(awk 'BEGIN{IGNORECASE=1} /^content-length:/ {sub(/\r$/,""); sub(/^[^:]+: /,""); print; exit}' "$headers_file")"
+          last_modified="${last_modified:-unknown}"
+          etag="${etag:-no-etag}"
+          content_length="${content_length:-unknown}"
+          cache_segment="$(printf '%s|%s|%s\n' "$last_modified" "$etag" "$content_length" | sha256sum | cut -d' ' -f1)"
+          {
+            echo "last_modified=$last_modified"
+            echo "etag=$etag"
+            echo "content_length=$content_length"
+            echo "cache_segment=$cache_segment"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached upstream DMG
+        id: dmg-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/codex-upstream-release/Codex.dmg
+          key: upstream-dmg-${{ env.DMG_CACHE_SCHEMA_VERSION }}-${{ steps.upstream-metadata.outputs.cache_segment }}
+
+      - name: Download upstream DMG
+        if: steps.dmg-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$UPSTREAM_DMG_PATH")"
+          curl -fL --retry 3 -o "$UPSTREAM_DMG_PATH" "$UPSTREAM_DMG_URL"
+
+      - name: Build app from upstream DMG
+        run: |
+          set -euo pipefail
+          test -s "$UPSTREAM_DMG_PATH"
+          CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1 \
+          CODEX_LINUX_FEATURES=remote-mobile-control,remote-control-ui \
+          CODEX_PATCH_REPORT_JSON="$GITHUB_WORKSPACE/patch-report.json" \
+            make build-app-fresh DMG="$UPSTREAM_DMG_PATH"
+          node scripts/ci/validate-patch-report.js patch-report.json --profile upstream-build
+
+      - name: Archive packaged app
+        run: |
+          set -euo pipefail
+          test -x codex-app/start.sh
+          test -f codex-app/resources/app.asar
+          tar -czf codex-app.tar.gz codex-app
+          ls -lh codex-app.tar.gz
+          test "$(stat -c '%s' codex-app.tar.gz)" -gt 100000000
+
+      - name: Upload packaged app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-codex-app
+          path: codex-app.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  build-deb:
+    name: Build Debian package
+    runs-on: ubuntu-latest
+    needs:
+      - prepare-release
+      - build-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore packaged app artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-codex-app
+
+      - name: Extract packaged app
         run: |
           set -euo pipefail
           rm -rf codex-app dist
-          tests/fixtures/create-packaged-app-fixture.sh codex-app
+          tar -xzf codex-app.tar.gz
+          test -x codex-app/start.sh
+          test -f codex-app/resources/app.asar
 
       - name: Build Debian package
-        run: PACKAGE_VERSION="$CI_PACKAGE_VERSION" ./scripts/build-deb.sh
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION="$CI_PACKAGE_VERSION" ./scripts/build-deb.sh
+          deb_file="$(find dist -maxdepth 1 -name 'codex-desktop_*.deb' -print -quit)"
+          test -n "$deb_file"
+          test "$(stat -c '%s' "$deb_file")" -gt 100000000
 
       - name: Upload Debian artifact
         uses: actions/upload-artifact@v4
@@ -103,7 +203,9 @@ jobs:
   build-rpm:
     name: Build RPM package
     runs-on: ubuntu-latest
-    needs: prepare-release
+    needs:
+      - prepare-release
+      - build-app
     steps:
       - uses: actions/checkout@v4
 
@@ -113,14 +215,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y rpm
 
-      - name: Create minimal packaged app fixture
+      - name: Restore packaged app artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-codex-app
+
+      - name: Extract packaged app
         run: |
           set -euo pipefail
           rm -rf codex-app dist
-          tests/fixtures/create-packaged-app-fixture.sh codex-app
+          tar -xzf codex-app.tar.gz
+          test -x codex-app/start.sh
+          test -f codex-app/resources/app.asar
 
       - name: Build RPM package
-        run: PACKAGE_VERSION="$CI_PACKAGE_VERSION" ./scripts/build-rpm.sh
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION="$CI_PACKAGE_VERSION" ./scripts/build-rpm.sh
+          rpm_file="$(find dist -maxdepth 1 -name 'codex-desktop-*.rpm' -print -quit)"
+          test -n "$rpm_file"
+          test "$(stat -c '%s' "$rpm_file")" -gt 100000000
 
       - name: Upload RPM artifact
         uses: actions/upload-artifact@v4
@@ -132,11 +246,18 @@ jobs:
   build-pacman:
     name: Build Pacman package
     runs-on: ubuntu-latest
-    needs: prepare-release
+    needs:
+      - prepare-release
+      - build-app
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Restore packaged app artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-codex-app
 
       - name: Build and capture pacman package in Arch Linux
         run: |
@@ -155,10 +276,15 @@ jobs:
               runuser -u builder -- bash -lc '"'"'
                 set -euo pipefail
                 rm -rf codex-app dist
-                tests/fixtures/create-packaged-app-fixture.sh codex-app
+                tar -xzf codex-app.tar.gz
+                test -x codex-app/start.sh
+                test -f codex-app/resources/app.asar
 
                 cargo build --release -p codex-update-manager
                 PACKAGE_VERSION="$CI_PACKAGE_VERSION" ./scripts/build-pacman.sh
+                pkg_file="$(find dist -maxdepth 1 -name 'codex-desktop-*.pkg.tar.*' -print -quit)"
+                test -n "$pkg_file"
+                test "$(stat -c '%s' "$pkg_file")" -gt 100000000
               '"'"'
             '
 
@@ -172,15 +298,24 @@ jobs:
   build-appimage:
     name: Build AppImage
     runs-on: ubuntu-latest
-    needs: prepare-release
+    needs:
+      - prepare-release
+      - build-app
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create minimal packaged app fixture
+      - name: Restore packaged app artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-codex-app
+
+      - name: Extract packaged app
         run: |
           set -euo pipefail
           rm -rf codex-app dist
-          tests/fixtures/create-packaged-app-fixture.sh codex-app
+          tar -xzf codex-app.tar.gz
+          test -x codex-app/start.sh
+          test -f codex-app/resources/app.asar
 
       - name: Install appimagetool
         run: |
@@ -194,7 +329,12 @@ jobs:
       - name: Build AppImage
         env:
           APPIMAGETOOL: /tmp/appimagetool.AppImage
-        run: PACKAGE_VERSION="$CI_PACKAGE_VERSION" ./scripts/build-appimage.sh
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION="$CI_PACKAGE_VERSION" ./scripts/build-appimage.sh
+          appimage_file="$(find dist -maxdepth 1 -name 'codex-desktop-*.AppImage' -print -quit)"
+          test -n "$appimage_file"
+          test "$(stat -c '%s' "$appimage_file")" -gt 100000000
 
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
@@ -208,6 +348,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - prepare-release
+      - build-app
       - build-deb
       - build-rpm
       - build-pacman
