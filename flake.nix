@@ -10,6 +10,26 @@
     flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system:
       let
         pkgs = import nixpkgs { inherit system; };
+        rustPlatform = pkgs.rustPlatform.overrideScope (final: prev: {
+          # Our pinned nixpkgs can still vendor crates through
+          # crates.io/api/v1/.../download, which is now returning 403 for some
+          # crates in GitHub Actions. Keep the fork self-contained and use the
+          # crates.io static CDN endpoint as the canonical source, matching the
+          # upstream nixpkgs fix without requiring an unrelated nixpkgs bump.
+          importCargoLock = prev.importCargoLock.override {
+            fetchurl = args:
+              pkgs.fetchurl (args // {
+                url =
+                  let
+                    match = builtins.match "https://crates\\.io/api/v1/crates/([^/]+)/([^/]+)/download" args.url;
+                  in
+                  if match == null then
+                    args.url
+                  else
+                    "https://static.crates.io/crates/${builtins.elemAt match 0}/${builtins.elemAt match 0}-${builtins.elemAt match 1}.crate";
+              });
+          };
+        });
         flakeSourceCommit = self.rev or (self.dirtyRev or "");
         flakeSourceDateEpoch = toString (self.lastModified or 1);
         sourceRoot = pkgs.lib.cleanSourceWith {
@@ -73,7 +93,7 @@
           '';
         } else null;
 
-        codexComputerUseBinaries = pkgs.rustPlatform.buildRustPackage {
+        codexComputerUseBinaries = rustPlatform.buildRustPackage {
           pname = "codex-computer-use-linux-binaries";
           version = "0.1.2-linux-alpha1";
           src = sourceRoot;

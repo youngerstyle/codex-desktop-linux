@@ -147,6 +147,13 @@ test_common_helper_sourcing() {
     ensure_file_exists "$probe_file" "probe file"
 }
 
+test_nix_crates_static_cdn_override_contract() {
+    info "Checking Nix Rust crate vendoring uses the static crates.io CDN"
+    assert_contains "$REPO_DIR/flake.nix" "https://static.crates.io/crates"
+    assert_contains "$REPO_DIR/flake.nix" "crates.io/api/v1/.../download"
+    assert_contains "$REPO_DIR/flake.nix" "codexComputerUseBinaries = rustPlatform.buildRustPackage"
+}
+
 test_package_payload_permission_normalization() {
     info "Checking package payload permission normalization"
     local root="$TMP_DIR/package-permissions"
@@ -4662,6 +4669,7 @@ EOF
 
 main() {
     test_common_helper_sourcing
+    test_nix_crates_static_cdn_override_contract
     test_package_payload_permission_normalization
     test_deb_builder_smoke
     test_update_builder_preserves_enabled_linux_features_config
