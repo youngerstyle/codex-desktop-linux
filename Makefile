@@ -6,6 +6,10 @@ NEXT_APP_DIR := $(CURDIR)/codex-app-next
 REBUILD_REPORT_DIR := $(CURDIR)/dist-next/rebuild
 PACKAGE_NAME := codex-desktop
 PACKAGE_WITH_UPDATER ?= 1
+DEFAULT_BUNDLED_LINUX_FEATURES := remote-mobile-control,remote-control-ui
+DEFAULT_COMPUTER_USE_UI := 1
+CODEX_LINUX_FEATURES ?= $(DEFAULT_BUNDLED_LINUX_FEATURES)
+CODEX_LINUX_ENABLE_COMPUTER_USE_UI ?= $(DEFAULT_COMPUTER_USE_UI)
 DEV_APP_ID ?= codex-cua-lab
 DEV_APP_NAME ?= Codex CUA Lab
 DEV_APP_DIR ?= $(CURDIR)/$(DEV_APP_ID)-app
@@ -158,11 +162,15 @@ inspect-upstream:
 
 build-app:
 	@echo "[make] Regenerating codex-app from DMG"
-	./install.sh "$(DMG)"
+	CODEX_LINUX_FEATURES="$(CODEX_LINUX_FEATURES)" \
+	CODEX_LINUX_ENABLE_COMPUTER_USE_UI="$(CODEX_LINUX_ENABLE_COMPUTER_USE_UI)" \
+		./install.sh "$(DMG)"
 
 build-app-fresh:
 	@echo "[make] Regenerating codex-app from fresh DMG"
-	./install.sh --fresh "$(DMG)"
+	CODEX_LINUX_FEATURES="$(CODEX_LINUX_FEATURES)" \
+	CODEX_LINUX_ENABLE_COMPUTER_USE_UI="$(CODEX_LINUX_ENABLE_COMPUTER_USE_UI)" \
+		./install.sh --fresh "$(DMG)"
 
 setup-native:
 	@echo "[make] Running guided native setup"

@@ -4,6 +4,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const FEATURE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const DEFAULT_BUNDLED_LINUX_FEATURE_IDS = [
+  "remote-mobile-control",
+  "remote-control-ui",
+];
 
 function defaultLinuxFeaturesRoot() {
   return path.resolve(__dirname, "..", "..", "linux-features");
@@ -61,7 +65,28 @@ function normalizeEnabledFeatureIds(value, sourcePath) {
   return ids;
 }
 
+function enabledLinuxFeatureIdsFromEnv(env = process.env) {
+  const raw = env.CODEX_LINUX_FEATURES;
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    return [];
+  }
+
+  return normalizeEnabledFeatureIds(
+    raw.split(",").map((item) => item.trim()).filter(Boolean),
+    "CODEX_LINUX_FEATURES",
+  );
+}
+
+function defaultBundledLinuxFeatureIds() {
+  return [...DEFAULT_BUNDLED_LINUX_FEATURE_IDS];
+}
+
 function enabledLinuxFeatureIds(options = {}) {
+  const envIds = enabledLinuxFeatureIdsFromEnv(options.env ?? process.env);
+  if (envIds.length > 0) {
+    return envIds;
+  }
+
   const featuresRoot = linuxFeaturesRoot(options);
   const configPath = linuxFeaturesConfigPath(featuresRoot);
   if (!fs.existsSync(configPath)) {
@@ -289,7 +314,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+  DEFAULT_BUNDLED_LINUX_FEATURE_IDS,
+  defaultBundledLinuxFeatureIds,
   enabledLinuxFeatureIds,
+  enabledLinuxFeatureIdsFromEnv,
   enabledLinuxFeatureStageHooks,
   loadEnabledLinuxFeatures,
   loadLinuxFeaturePatchDescriptors,

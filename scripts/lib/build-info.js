@@ -240,7 +240,7 @@ function buildInfo(options) {
     linuxTarget: linuxTargetInfo(target),
     packageProfile: packageProfile(target),
     linuxFeatures: {
-      enabled: enabledLinuxFeatureIds({ featuresRoot }),
+      enabled: enabledLinuxFeatureIds({ featuresRoot, env }),
     },
   };
 }
