@@ -59,7 +59,8 @@ const PACMAN_PACKAGE_SUFFIXES: &[&str] = &[
     ".pkg.tar.lz4",
     ".pkg.tar.lz5",
 ];
-const DEFAULT_BUNDLED_LINUX_FEATURES: &str = "remote-mobile-control,remote-control-ui";
+const DEFAULT_BUNDLED_LINUX_FEATURES: &str =
+    "remote-mobile-control,remote-control-ui,open-target-discovery";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Paths to the temporary workspace and generated package produced by a rebuild.
@@ -453,7 +454,7 @@ mod tests {
             FakePackageOutput::Deb => {
                 r#"#!/bin/bash
 set -euo pipefail
-test "${CODEX_LINUX_FEATURES:-}" = "remote-mobile-control,remote-control-ui"
+test "${CODEX_LINUX_FEATURES:-}" = "remote-mobile-control,remote-control-ui,open-target-discovery"
 test "${CODEX_LINUX_ENABLE_COMPUTER_USE_UI:-}" = "1"
 mkdir -p "${DIST_DIR_OVERRIDE}"
 touch "${DIST_DIR_OVERRIDE}/codex-desktop_${PACKAGE_VERSION}_amd64.deb"
@@ -616,7 +617,7 @@ touch "${DIST_DIR_OVERRIDE}/codex-desktop-${VER}-1-x86_64.pkg.tar.zst"
             bundle_root.join("install.sh"),
             r#"#!/bin/bash
 set -euo pipefail
-test "${CODEX_LINUX_FEATURES:-}" = "remote-mobile-control,remote-control-ui"
+test "${CODEX_LINUX_FEATURES:-}" = "remote-mobile-control,remote-control-ui,open-target-discovery"
 test "${CODEX_LINUX_ENABLE_COMPUTER_USE_UI:-}" = "1"
 mkdir -p "${CODEX_INSTALL_DIR}"
 echo launcher > "${CODEX_INSTALL_DIR}/start.sh"

@@ -7,6 +7,7 @@ const FEATURE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 const DEFAULT_BUNDLED_LINUX_FEATURE_IDS = [
   "remote-mobile-control",
   "remote-control-ui",
+  "open-target-discovery",
 ];
 
 function defaultLinuxFeaturesRoot() {

@@ -279,7 +279,11 @@ test("Linux target context parses distro, package, and desktop details", () => {
 });
 
 test("CODEX_LINUX_FEATURES env drives Linux feature activation", () => {
-  assert.deepEqual(defaultBundledLinuxFeatureIds(), ["remote-mobile-control", "remote-control-ui"]);
+  assert.deepEqual(defaultBundledLinuxFeatureIds(), [
+    "remote-mobile-control",
+    "remote-control-ui",
+    "open-target-discovery",
+  ]);
 
   assert.deepEqual(
     enabledLinuxFeatureIdsFromEnv({
