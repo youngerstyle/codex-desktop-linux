@@ -300,10 +300,17 @@ jobs:
           PACKAGE_VERSION="$RELEASE_PACKAGE_VERSION" ./scripts/build-pacman.sh
           pkg_file="$(find dist -maxdepth 1 -name 'codex-desktop-*.pkg.tar.*' -print -quit)"
           test -n "$pkg_file"
-          # pacman's .pkg.tar.zst recompresses the already-compressed DMG payload more efficiently
-          # than deb/rpm/AppImage. Keep a lower guard than the raw app artifact, but high
-          # enough to reject the old fixture-sized 4-5MB release packages.
-          test "$(stat -c '%s' "$pkg_file")" -gt 40000000
+          pkg_size="$(stat -c '%s' "$pkg_file")"
+          echo "Pacman package size: ${pkg_size} bytes"
+          # Pacman's .pkg.tar.zst can recompress the already-compressed app payload
+          # much smaller than deb/rpm/AppImage, so validate the real payload instead of
+          # relying on a brittle high byte threshold.
+          test "$pkg_size" -gt 5000000
+          bsdtar -tf "$pkg_file" | grep -Fx 'opt/codex-desktop/resources/app.asar'
+          bsdtar -tf "$pkg_file" | grep -Fx 'opt/codex-desktop/update-builder/linux-features/features.json'
+          bsdtar -tf "$pkg_file" | grep -Fx 'opt/codex-desktop/resources/codex-linux-build-info.json'
+          bsdtar -tf "$pkg_file" | grep -Fx 'usr/bin/codex-update-manager'
+          bsdtar -tf "$pkg_file" | grep -Fx 'usr/lib/systemd/user/codex-update-manager.service'
           EOF
           chmod +x .github/scripts/build-pacman-release-inner.sh
 
