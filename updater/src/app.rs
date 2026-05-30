@@ -739,7 +739,14 @@ async fn reconcile_pending_install(
                 return Ok(());
             }
 
-            trigger_install(state, paths, &config.workspace_root, &package_path).await?;
+            trigger_install(
+                state,
+                paths,
+                &config.workspace_root,
+                &package_path,
+                config.notifications,
+            )
+            .await?;
         }
         _ => {}
     }
@@ -816,7 +823,14 @@ async fn run_install_ready(
     }
 
     clear_install_auth_required_event(state, paths)?;
-    trigger_install(state, paths, &config.workspace_root, &package_path).await
+    trigger_install(
+        state,
+        paths,
+        &config.workspace_root,
+        &package_path,
+        config.notifications,
+    )
+    .await
 }
 
 fn complete_pending_install_if_already_installed(
@@ -1085,15 +1099,18 @@ async fn trigger_install(
     paths: &RuntimePaths,
     workspace_root: &Path,
     package_path: &Path,
+    notifications: bool,
 ) -> Result<()> {
     state.status = UpdateStatus::Installing;
     state.error_message = None;
     persist_state(paths, state)?;
 
-    let _ = notify::send(
-        "Installing Codex Desktop update",
-        "Applying the locally rebuilt Linux package.",
-    );
+    if notifications {
+        let _ = notify::send(
+            "Installing Codex Desktop update",
+            "Applying the locally rebuilt Linux package.",
+        );
+    }
 
     let output = run_privileged_install(package_path)
         .context("Failed to launch pkexec for update installation")?;
@@ -1108,7 +1125,7 @@ async fn trigger_install(
         state.notified_events.clear();
         cache_cleanup::normalize_artifact_workspace_dir(workspace_root, state);
         persist_state(paths, state)?;
-        let _ = maybe_notify_installed(state, paths, true);
+        let _ = maybe_notify_installed(state, paths, notifications);
         maybe_prune_workspace_cache(workspace_root, state);
         return Ok(());
     }
@@ -1135,10 +1152,12 @@ async fn trigger_install(
     }
 
     mark_failed_and_persist(state, paths, error.to_string())?;
-    let _ = notify::send(
-        "Codex update failed",
-        "The package could not be installed. Check the updater log for details.",
-    );
+    if notifications {
+        let _ = notify::send(
+            "Codex update failed",
+            "The package could not be installed. Check the updater log for details.",
+        );
+    }
     Err(error)
 }
 
