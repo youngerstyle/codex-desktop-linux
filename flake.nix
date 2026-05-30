@@ -47,7 +47,7 @@
           hash = "sha256-yanuEZhqD4gBWLgeRZtktoRkI5b0nq9/oOAY9KjDe0I=";
         };
 
-        codexVersion = "26.519.81530";
+        codexVersion = "26.527.31326";
         electronVersion = "42.1.0";
         electronPlatform =
           {

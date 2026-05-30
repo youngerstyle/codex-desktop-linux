@@ -160,20 +160,12 @@ APP_DIR="$(find "$WORK_DIR/dmg" -maxdepth 3 -name "*.app" -type d | head -1)"
 [ -n "$APP_DIR" ] || fail "Could not find .app bundle in $UPSTREAM_DMG_PATH"
 
 ASAR_PATH="$APP_DIR/Contents/Resources/app.asar"
-PLIST_PATH="$APP_DIR/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/Info.plist"
 [ -f "$ASAR_PATH" ] || fail "Could not find app.asar in DMG"
-[ -f "$PLIST_PATH" ] || fail "Could not find Electron Info.plist in DMG"
 ASAR_EXTRACT_DIR="$WORK_DIR/app-extracted"
 npx --yes asar extract "$ASAR_PATH" "$ASAR_EXTRACT_DIR"
 
-dmg_electron_version="$(python3 - "$PLIST_PATH" <<'PY'
-import plistlib
-import sys
-
-with open(sys.argv[1], "rb") as handle:
-    print(plistlib.load(handle).get("CFBundleVersion", ""))
-PY
-)"
+dmg_electron_version="$(json_file_field "$ASAR_EXTRACT_DIR/package.json" "value.devDependencies?.electron ?? value.dependencies?.electron")"
+[ -n "$dmg_electron_version" ] || fail "Could not find Electron npm version in app.asar package.json"
 dmg_codex_version="$(json_file_field "$ASAR_EXTRACT_DIR/package.json" "value.version")"
 dmg_better_sqlite3_version="$(json_file_field "$ASAR_EXTRACT_DIR/node_modules/better-sqlite3/package.json" "value.version")"
 dmg_node_pty_version="$(json_file_field "$ASAR_EXTRACT_DIR/node_modules/node-pty/package.json" "value.version")"
