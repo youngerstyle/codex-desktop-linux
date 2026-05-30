@@ -252,7 +252,7 @@ SCRIPT
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/linux-features/features.json"
     assert_contains "$pkg_root/opt/codex-desktop/update-builder/linux-features/features.json" "remote-mobile-control"
     assert_contains "$pkg_root/opt/codex-desktop/update-builder/linux-features/features.json" "remote-control-ui"
-    assert_not_contains "$pkg_root/opt/codex-desktop/update-builder/linux-features/features.json" "open-target-discovery"
+    assert_contains "$pkg_root/opt/codex-desktop/update-builder/linux-features/features.json" "open-target-discovery"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/node-runtime/bin/node"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/Cargo.toml"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/computer-use-linux/Cargo.toml"
@@ -874,7 +874,7 @@ test_native_shortcut_targets_compose_existing_flows() {
 
     make -n -C "$REPO_DIR" install-native >"$install_log"
     assert_contains "$install_log" './install.sh --fresh'
-    assert_contains "$install_log" 'CODEX_LINUX_FEATURES="remote-mobile-control,remote-control-ui"'
+    assert_contains "$install_log" 'CODEX_LINUX_FEATURES="remote-mobile-control,remote-control-ui,open-target-discovery"'
     assert_contains "$install_log" 'CODEX_LINUX_ENABLE_COMPUTER_USE_UI="1"'
     assert_contains "$install_log" 'Building native package'
     assert_contains "$install_log" 'Installing latest native package'

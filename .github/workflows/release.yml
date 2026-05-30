@@ -141,7 +141,7 @@ jobs:
           set -euo pipefail
           test -s "$UPSTREAM_DMG_PATH"
           CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1 \
-          CODEX_LINUX_FEATURES=remote-mobile-control,remote-control-ui \
+          CODEX_LINUX_FEATURES=remote-mobile-control,remote-control-ui,open-target-discovery \
           CODEX_PATCH_REPORT_JSON="$GITHUB_WORKSPACE/patch-report.json" \
             make build-app-fresh DMG="$UPSTREAM_DMG_PATH"
           node scripts/ci/validate-patch-report.js patch-report.json --profile upstream-build

@@ -66,8 +66,22 @@ const helperPath = path.resolve(process.argv[2]);
 const targetPath = path.resolve(process.argv[3]);
 const { defaultBundledLinuxFeatureIds, enabledLinuxFeatureIds } = require(helperPath);
 
-let enabled = enabledLinuxFeatureIds();
-if (enabled.length === 0) {
+const explicitEnv = process.env.CODEX_LINUX_FEATURES;
+const explicitConfig = process.env.CODEX_LINUX_FEATURES_CONFIG;
+let enabled = [];
+if (typeof explicitEnv === "string" && explicitEnv.trim().length > 0) {
+  enabled = enabledLinuxFeatureIds({ env: process.env });
+} else if (typeof explicitConfig === "string" && explicitConfig.trim().length > 0) {
+  // Explicit CI/user config is respected and sanitized when non-empty; an empty
+  // example config still falls back to the fork's bundled defaults for shipping.
+  enabled = enabledLinuxFeatureIds();
+  if (enabled.length === 0) {
+    enabled = defaultBundledLinuxFeatureIds();
+  }
+} else {
+  // Do not let a developer-local, gitignored linux-features/features.json leak into
+  // shipped updater rebuild bundles. Packages should carry the fork's bundled
+  // default feature set unless the packaging caller explicitly overrides it.
   enabled = defaultBundledLinuxFeatureIds();
 }
 

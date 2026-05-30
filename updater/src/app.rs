@@ -19,7 +19,7 @@ use std::{
     io::{Seek, SeekFrom, Write},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, ExitStatus},
 };
 use tokio::time::{self, Duration};
 use tracing::{error, info, warn};
@@ -739,7 +739,14 @@ async fn reconcile_pending_install(
                 return Ok(());
             }
 
-            trigger_install(state, paths, &config.workspace_root, &package_path).await?;
+            trigger_install(
+                state,
+                paths,
+                &config.workspace_root,
+                &package_path,
+                config.notifications,
+            )
+            .await?;
         }
         _ => {}
     }
@@ -815,20 +822,15 @@ async fn run_install_ready(
         return Ok(());
     }
 
-    if liveness::is_app_running(config)? {
-        clear_install_auth_required_event(state, paths)?;
-        set_status(state, paths, UpdateStatus::WaitingForAppExit)?;
-        maybe_send_notification(
-            config.notifications,
-            "Codex Desktop update ready",
-            "Close Codex Desktop to install the ready update.",
-        );
-        println!("Codex Desktop is running. Close it to install the ready update.");
-        return Ok(());
-    }
-
     clear_install_auth_required_event(state, paths)?;
-    trigger_install(state, paths, &config.workspace_root, &package_path).await
+    trigger_install(
+        state,
+        paths,
+        &config.workspace_root,
+        &package_path,
+        config.notifications,
+    )
+    .await
 }
 
 fn complete_pending_install_if_already_installed(
@@ -1097,19 +1099,20 @@ async fn trigger_install(
     paths: &RuntimePaths,
     workspace_root: &Path,
     package_path: &Path,
+    notifications: bool,
 ) -> Result<()> {
     state.status = UpdateStatus::Installing;
     state.error_message = None;
     persist_state(paths, state)?;
 
-    let _ = notify::send(
-        "Installing Codex Desktop update",
-        "Applying the locally rebuilt Linux package.",
-    );
+    if notifications {
+        let _ = notify::send(
+            "Installing Codex Desktop update",
+            "Applying the locally rebuilt Linux package.",
+        );
+    }
 
-    let current_exe = std::env::current_exe().context("Failed to resolve updater binary path")?;
-    let output = install::pkexec_command(&current_exe, package_path)
-        .output()
+    let output = run_privileged_install(package_path)
         .context("Failed to launch pkexec for update installation")?;
     let status = output.status;
 
@@ -1122,7 +1125,7 @@ async fn trigger_install(
         state.notified_events.clear();
         cache_cleanup::normalize_artifact_workspace_dir(workspace_root, state);
         persist_state(paths, state)?;
-        let _ = maybe_notify_installed(state, paths, true);
+        let _ = maybe_notify_installed(state, paths, notifications);
         maybe_prune_workspace_cache(workspace_root, state);
         return Ok(());
     }
@@ -1149,11 +1152,54 @@ async fn trigger_install(
     }
 
     mark_failed_and_persist(state, paths, error.to_string())?;
-    let _ = notify::send(
-        "Codex update failed",
-        "The package could not be installed. Check the updater log for details.",
-    );
+    if notifications {
+        let _ = notify::send(
+            "Codex update failed",
+            "The package could not be installed. Check the updater log for details.",
+        );
+    }
     Err(error)
+}
+
+#[cfg(test)]
+fn run_privileged_install(package_path: &Path) -> Result<InstallCommandOutput> {
+    use std::os::unix::process::ExitStatusExt;
+
+    let Some(mock_log) = std::env::var_os("CODEX_UPDATE_MANAGER_TEST_PRIVILEGED_INSTALL_LOG")
+    else {
+        let current_exe =
+            std::env::current_exe().context("Failed to resolve updater binary path")?;
+        let output = install::pkexec_command(&current_exe, package_path).output()?;
+        return Ok(InstallCommandOutput {
+            status: output.status,
+            stdout: output.stdout,
+            stderr: output.stderr,
+        });
+    };
+
+    std::fs::write(&mock_log, package_path.display().to_string())?;
+    Ok(InstallCommandOutput {
+        status: ExitStatus::from_raw(0),
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+    })
+}
+
+#[cfg(not(test))]
+fn run_privileged_install(package_path: &Path) -> Result<InstallCommandOutput> {
+    let current_exe = std::env::current_exe().context("Failed to resolve updater binary path")?;
+    let output = install::pkexec_command(&current_exe, package_path).output()?;
+    Ok(InstallCommandOutput {
+        status: output.status,
+        stdout: output.stdout,
+        stderr: output.stderr,
+    })
+}
+
+struct InstallCommandOutput {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
 }
 
 fn pkexec_authentication_was_not_obtained(status: &std::process::ExitStatus) -> bool {
@@ -1496,7 +1542,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn install_ready_waits_when_app_is_running() -> Result<()> {
+    async fn install_ready_requests_auth_immediately_when_app_is_running() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let paths = RuntimePaths {
             config_file: temp.path().join("config/config.toml"),
@@ -1530,14 +1576,25 @@ mod tests {
         let mut state = PersistedState::new(false);
         state.status = UpdateStatus::ReadyToInstall;
         state.candidate_version = Some("2999.03.25.010203+deadbeef".to_string());
-        state.artifact_paths.package_path = Some(package_path);
+        state.artifact_paths.package_path = Some(package_path.clone());
         state
             .notified_events
             .insert("install_auth_required:2999.03.25.010203+deadbeef".to_string());
 
-        run_install_ready(&config, &mut state, &paths).await?;
+        let install_log = temp.path().join("privileged-install.log");
+        std::env::set_var(
+            "CODEX_UPDATE_MANAGER_TEST_PRIVILEGED_INSTALL_LOG",
+            &install_log,
+        );
 
-        assert_eq!(state.status, UpdateStatus::WaitingForAppExit);
+        run_install_ready(&config, &mut state, &paths).await?;
+        std::env::remove_var("CODEX_UPDATE_MANAGER_TEST_PRIVILEGED_INSTALL_LOG");
+
+        assert_eq!(state.status, UpdateStatus::Installed);
+        assert_eq!(
+            std::fs::read_to_string(&install_log)?,
+            package_path.display().to_string()
+        );
         assert!(!install_auth_retry_is_blocked(&state));
         Ok(())
     }
