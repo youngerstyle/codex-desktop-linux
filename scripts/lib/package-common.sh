@@ -44,26 +44,54 @@ validate_packaged_app_bundled_plugins() {
     local bundled_root="$resources_dir/plugins/openai-bundled"
     local marketplace="$bundled_root/.agents/plugins/marketplace.json"
     local computer_use_plugin="$bundled_root/plugins/computer-use"
+    local chrome_plugin="$bundled_root/plugins/chrome"
 
     [ -f "$marketplace" ] || error "Missing bundled plugin marketplace: $marketplace. Run ./install.sh again so Linux-safe bundled plugins are staged."
     [ -f "$computer_use_plugin/.codex-plugin/plugin.json" ] || error "Missing Computer Use plugin manifest: $computer_use_plugin/.codex-plugin/plugin.json. Run ./install.sh again."
     [ -f "$computer_use_plugin/.mcp.json" ] || error "Missing Computer Use MCP manifest: $computer_use_plugin/.mcp.json. Run ./install.sh again."
     [ -x "$computer_use_plugin/bin/codex-computer-use-linux" ] || error "Missing executable Computer Use backend: $computer_use_plugin/bin/codex-computer-use-linux. Install Rust/cargo or provide CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE, then run ./install.sh again."
     [ -x "$computer_use_plugin/bin/codex-computer-use-cosmic" ] || error "Missing executable Computer Use COSMIC helper: $computer_use_plugin/bin/codex-computer-use-cosmic. Install Rust/cargo or provide CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE, then run ./install.sh again."
+    [ -f "$chrome_plugin/.codex-plugin/plugin.json" ] || error "Missing Chrome plugin manifest: $chrome_plugin/.codex-plugin/plugin.json. Run ./install.sh again."
+    [ -x "$chrome_plugin/extension-host/linux/x64/extension-host" ] || error "Missing executable Chrome native host: $chrome_plugin/extension-host/linux/x64/extension-host. Run ./install.sh again."
+    [ -x "$resources_dir/node-runtime/bin/node" ] || error "Missing managed Node.js runtime: $resources_dir/node-runtime/bin/node. Run ./install.sh again."
 
-    node - "$marketplace" <<'NODE' || error "Bundled plugin marketplace does not advertise Computer Use: $marketplace"
+    node - "$marketplace" <<'NODE' || error "Bundled plugin marketplace does not advertise required Linux plugins: $marketplace"
 const fs = require("node:fs");
 const marketplacePath = process.argv[2];
 const marketplace = JSON.parse(fs.readFileSync(marketplacePath, "utf8"));
 const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
-const computerUse = plugins.find((plugin) => plugin && plugin.name === "computer-use");
-if (!computerUse) {
-  process.exit(1);
-}
-if (computerUse.source?.source !== "local" || computerUse.source?.path !== "./plugins/computer-use") {
-  process.exit(1);
+const byName = new Map(plugins.map((plugin) => [plugin && plugin.name, plugin]));
+for (const [name, expectedPath] of [["computer-use", "./plugins/computer-use"], ["chrome", "./plugins/chrome"]]) {
+  const plugin = byName.get(name);
+  if (!plugin) process.exit(1);
+  if (plugin.source?.source !== "local" || plugin.source?.path !== expectedPath) process.exit(1);
 }
 NODE
+}
+
+stage_packaged_runtime_compat_resources() {
+    local app_root="$1"
+    local resources_dir="$app_root/resources"
+    local node_target="$resources_dir/node-runtime/bin/node"
+    local node_link="$resources_dir/node"
+    local codex_wrapper="$resources_dir/codex"
+
+    [ -x "$node_target" ] || error "Missing managed Node.js runtime: $node_target"
+    ln -sfn "node-runtime/bin/node" "$node_link"
+
+    cat > "$codex_wrapper" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${CODEX_CLI_PATH:-}" ] && [ -x "$CODEX_CLI_PATH" ]; then
+    exec "$CODEX_CLI_PATH" "$@"
+fi
+if command -v codex >/dev/null 2>&1; then
+    exec codex "$@"
+fi
+echo "Codex CLI not found. Set CODEX_CLI_PATH or install @openai/codex." >&2
+exit 127
+SCRIPT
+    chmod 0755 "$codex_wrapper"
 }
 
 sed_escape_replacement() {
@@ -572,6 +600,7 @@ stage_common_package_files() {
 
     rm -rf "$app_root"
     cp -aT "$APP_DIR" "$app_root"
+    stage_packaged_runtime_compat_resources "$app_root"
     mkdir -p "$app_root/.codex-linux"
     cp "$ICON_SOURCE" "$app_root/.codex-linux/$PACKAGE_NAME.png"
     render_desktop_entry_doctor_helper "$app_root/.codex-linux/codex-desktop-entry-doctor.sh"

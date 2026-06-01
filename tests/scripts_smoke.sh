@@ -265,12 +265,18 @@ SCRIPT
     assert_file_exists "$pkg_root/opt/codex-desktop/.codex-linux/codex-desktop-entry-doctor.sh"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/packaging/linux/codex-desktop-entry-doctor.sh"
     assert_file_exists "$pkg_root/opt/codex-desktop/resources/node-runtime/bin/node"
+    assert_file_exists "$pkg_root/opt/codex-desktop/resources/node"
+    assert_file_exists "$pkg_root/opt/codex-desktop/resources/codex"
+    assert_contains "$pkg_root/opt/codex-desktop/resources/codex" "CODEX_CLI_PATH"
     assert_file_exists "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/.agents/plugins/marketplace.json"
     assert_file_exists "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/plugins/computer-use/.codex-plugin/plugin.json"
     assert_file_exists "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/plugins/computer-use/.mcp.json"
     assert_file_exists "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-linux"
     assert_file_exists "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-cosmic"
+    assert_file_exists "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/plugins/chrome/.codex-plugin/plugin.json"
+    assert_file_exists "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/plugins/chrome/extension-host/linux/x64/extension-host"
     assert_contains "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/.agents/plugins/marketplace.json" "computer-use"
+    assert_contains "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/.agents/plugins/marketplace.json" "chrome"
 }
 
 test_packaging_rejects_app_without_computer_use() {

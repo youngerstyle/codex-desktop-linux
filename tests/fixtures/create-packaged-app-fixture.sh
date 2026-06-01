@@ -9,7 +9,9 @@ mkdir -p \
     "$app_dir/resources/plugins/openai-bundled/.agents/plugins" \
     "$app_dir/resources/plugins/openai-bundled/plugins/computer-use/.codex-plugin" \
     "$app_dir/resources/plugins/openai-bundled/plugins/computer-use/bin" \
-    "$app_dir/resources/plugins/openai-bundled/plugins/computer-use/assets"
+    "$app_dir/resources/plugins/openai-bundled/plugins/computer-use/assets" \
+    "$app_dir/resources/plugins/openai-bundled/plugins/chrome/.codex-plugin" \
+    "$app_dir/resources/plugins/openai-bundled/plugins/chrome/extension-host/linux/x64"
 
 cat > "$app_dir/resources/plugins/openai-bundled/.agents/plugins/marketplace.json" <<'JSON'
 {
@@ -19,6 +21,18 @@ cat > "$app_dir/resources/plugins/openai-bundled/.agents/plugins/marketplace.jso
       "source": {
         "source": "local",
         "path": "./plugins/computer-use"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "chrome",
+      "source": {
+        "source": "local",
+        "path": "./plugins/chrome"
       },
       "policy": {
         "installation": "AVAILABLE",
@@ -60,6 +74,19 @@ for binary in codex-computer-use-linux codex-computer-use-cosmic; do
     chmod +x "$app_dir/resources/plugins/openai-bundled/plugins/computer-use/bin/$binary"
 done
 : > "$app_dir/resources/plugins/openai-bundled/plugins/computer-use/assets/app-icon.png"
+
+cat > "$app_dir/resources/plugins/openai-bundled/plugins/chrome/.codex-plugin/plugin.json" <<'JSON'
+{
+  "name": "chrome",
+  "version": "0.1.0-linux-fixture",
+  "interface": {
+    "displayName": "Chrome",
+    "category": "Productivity"
+  }
+}
+JSON
+printf '%s\n' '#!/usr/bin/env bash' 'echo "chrome extension host fixture"' > "$app_dir/resources/plugins/openai-bundled/plugins/chrome/extension-host/linux/x64/extension-host"
+chmod +x "$app_dir/resources/plugins/openai-bundled/plugins/chrome/extension-host/linux/x64/extension-host"
 
 printf '%s\n' '#!/usr/bin/env bash' 'echo "codex desktop fixture"' > "$app_dir/start.sh"
 chmod +x "$app_dir/start.sh"
