@@ -265,6 +265,40 @@ SCRIPT
     assert_file_exists "$pkg_root/opt/codex-desktop/.codex-linux/codex-desktop-entry-doctor.sh"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/packaging/linux/codex-desktop-entry-doctor.sh"
     assert_file_exists "$pkg_root/opt/codex-desktop/resources/node-runtime/bin/node"
+    assert_file_exists "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/.agents/plugins/marketplace.json"
+    assert_file_exists "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/plugins/computer-use/.codex-plugin/plugin.json"
+    assert_file_exists "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/plugins/computer-use/.mcp.json"
+    assert_file_exists "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-linux"
+    assert_file_exists "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-cosmic"
+    assert_contains "$pkg_root/opt/codex-desktop/resources/plugins/openai-bundled/.agents/plugins/marketplace.json" "computer-use"
+}
+
+test_packaging_rejects_app_without_computer_use() {
+    info "Checking package builders reject app payloads without Computer Use"
+    local workspace="$TMP_DIR/package-requires-computer-use"
+    local app_dir="$workspace/app"
+    local output_log="$workspace/output.log"
+
+    mkdir -p "$app_dir/resources/node-runtime/bin" "$app_dir/content/webview"
+    printf '%s\n' '#!/usr/bin/env bash' 'echo start' > "$app_dir/start.sh"
+    chmod +x "$app_dir/start.sh"
+
+    (
+        export APP_DIR="$app_dir"
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        ensure_app_layout
+    ) >"$output_log" 2>&1 && fail "ensure_app_layout should reject app payloads without Computer Use"
+
+    assert_contains "$output_log" "Missing bundled plugin marketplace"
+
+    (
+        export APP_DIR="$app_dir"
+        export CODEX_PACKAGE_REQUIRE_COMPUTER_USE=0
+        # shellcheck disable=SC1091
+        source "$REPO_DIR/scripts/lib/package-common.sh"
+        ensure_app_layout
+    ) >>"$output_log" 2>&1 || fail "CODEX_PACKAGE_REQUIRE_COMPUTER_USE=0 should allow legacy/no-CU payloads"
 }
 
 test_update_builder_preserves_enabled_linux_features_config() {
@@ -4279,11 +4313,13 @@ EOF
 test_desktop_entry_doctor_repairs_only_legacy_generated_entries() {
     info "Checking desktop-entry doctor only backs up legacy generated entries"
     local workspace="$TMP_DIR/desktop-entry-doctor"
-    local desktop_dir="$workspace/applications"
+    local desktop_dir="$workspace/.local/share/applications"
     local template="$REPO_DIR/contrib/user-local-install/files/.local/share/applications/codex-desktop.desktop"
     local stale_entry="$desktop_dir/stale.desktop"
     local current_entry="$desktop_dir/current.desktop"
     local custom_entry="$desktop_dir/custom.desktop"
+    local stale_resources_entry="$desktop_dir/stale-resources.desktop"
+    local legacy_named_entry="$desktop_dir/codex-desktop-enhanced.desktop"
 
     mkdir -p "$desktop_dir"
 
@@ -4302,6 +4338,36 @@ Name=Open New Instance
 Exec=env CODEX_MULTI_LAUNCH=1 /home/tester/.local/bin/codex-desktop --new-instance
 EOF
 
+    cat > "$stale_resources_entry" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Codex Desktop
+Exec=env CODEX_ELECTRON_RESOURCES_PATH=/home/tester/.local/share/codex-desktop/resources CODEX_CLI_PATH=/home/tester/.local/bin/codex /usr/bin/codex-desktop %u
+Terminal=false
+Icon=codex-desktop
+MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=env CODEX_ELECTRON_RESOURCES_PATH=/home/tester/.local/share/codex-desktop/resources CODEX_MULTI_LAUNCH=1 /usr/bin/codex-desktop --new-instance
+EOF
+
+    cat > "$legacy_named_entry" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Codex Desktop
+Exec=env CODEX_ELECTRON_RESOURCES_PATH=/home/tester/.local/share/codex-desktop/resources /usr/bin/codex-desktop %u
+Terminal=false
+Icon=codex-desktop
+MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=env CODEX_ELECTRON_RESOURCES_PATH=/home/tester/.local/share/codex-desktop/resources CODEX_MULTI_LAUNCH=1 /usr/bin/codex-desktop --new-instance
+EOF
+
     cat > "$custom_entry" <<'EOF'
 [Desktop Entry]
 Type=Application
@@ -4313,8 +4379,16 @@ EOF
     (
         # shellcheck disable=SC1091
         . "$REPO_DIR/packaging/linux/codex-desktop-entry-doctor.sh"
+        runuser() {
+            if [ "$1" = "-u" ]; then
+                shift 3
+            fi
+            "$@"
+        }
         codex_desktop_write_user_local_entry "$template" "$current_entry" "/home/tester"
         codex_desktop_repair_shadow_entry "$stale_entry"
+        codex_desktop_repair_shadow_entry "$stale_resources_entry"
+        codex_desktop_repair_user_shadow_entries "tester" "$workspace" "codex-desktop.desktop"
         if codex_desktop_repair_shadow_entry "$current_entry"; then
             exit 1
         fi
@@ -4324,17 +4398,30 @@ EOF
         if codex_desktop_repair_shadow_entry "$stale_entry"; then
             exit 1
         fi
+        if codex_desktop_repair_shadow_entry "$stale_resources_entry"; then
+            exit 1
+        fi
+        if codex_desktop_repair_shadow_entry "$legacy_named_entry"; then
+            exit 1
+        fi
     )
 
     assert_file_not_exists "$stale_entry"
     assert_file_exists "$stale_entry.bak"
     assert_contains "$stale_entry.bak" "Actions=NewInstance;"
+    assert_file_not_exists "$stale_resources_entry"
+    assert_file_exists "$stale_resources_entry.bak"
+    assert_contains "$stale_resources_entry.bak" "CODEX_ELECTRON_RESOURCES_PATH=/home/tester/.local/share/codex-desktop/resources"
+    assert_file_not_exists "$legacy_named_entry"
+    assert_file_exists "$legacy_named_entry.bak"
+    assert_contains "$legacy_named_entry.bak" "CODEX_ELECTRON_RESOURCES_PATH=/home/tester/.local/share/codex-desktop/resources"
     assert_file_exists "$current_entry"
     assert_contains "$current_entry" "Actions=new-window;"
     assert_contains "$current_entry" "x-scheme-handler/codex-browser-sidebar"
     assert_file_exists "$custom_entry"
     assert_not_contains "$custom_entry" "codex-browser-sidebar"
     assert_file_not_exists "$stale_entry.bak.1"
+    assert_file_not_exists "$stale_resources_entry.bak.1"
 }
 
 test_user_local_install_from_update_defers_record_only_metadata() {
@@ -4674,6 +4761,7 @@ main() {
     test_nix_crates_static_cdn_override_contract
     test_package_payload_permission_normalization
     test_deb_builder_smoke
+    test_packaging_rejects_app_without_computer_use
     test_update_builder_preserves_enabled_linux_features_config
     test_deb_builder_respects_package_identity
     test_deb_builder_without_updater

@@ -18,6 +18,52 @@ ensure_file_exists() {
 ensure_app_layout() {
     [ -d "$APP_DIR" ] || error "Missing app directory: $APP_DIR. Run ./install.sh first."
     [ -x "$APP_DIR/start.sh" ] || error "Missing launcher: $APP_DIR/start.sh"
+    validate_packaged_app_bundled_plugins
+}
+
+package_requires_computer_use() {
+    case "${CODEX_PACKAGE_REQUIRE_COMPUTER_USE:-1}" in
+        1|true|True|TRUE|yes|Yes|YES|on|On|ON)
+            return 0
+            ;;
+        0|false|False|FALSE|no|No|NO|off|Off|OFF)
+            return 1
+            ;;
+        *)
+            error "CODEX_PACKAGE_REQUIRE_COMPUTER_USE must be 1 or 0"
+            ;;
+    esac
+}
+
+validate_packaged_app_bundled_plugins() {
+    if ! package_requires_computer_use; then
+        return 0
+    fi
+
+    local resources_dir="$APP_DIR/resources"
+    local bundled_root="$resources_dir/plugins/openai-bundled"
+    local marketplace="$bundled_root/.agents/plugins/marketplace.json"
+    local computer_use_plugin="$bundled_root/plugins/computer-use"
+
+    [ -f "$marketplace" ] || error "Missing bundled plugin marketplace: $marketplace. Run ./install.sh again so Linux-safe bundled plugins are staged."
+    [ -f "$computer_use_plugin/.codex-plugin/plugin.json" ] || error "Missing Computer Use plugin manifest: $computer_use_plugin/.codex-plugin/plugin.json. Run ./install.sh again."
+    [ -f "$computer_use_plugin/.mcp.json" ] || error "Missing Computer Use MCP manifest: $computer_use_plugin/.mcp.json. Run ./install.sh again."
+    [ -x "$computer_use_plugin/bin/codex-computer-use-linux" ] || error "Missing executable Computer Use backend: $computer_use_plugin/bin/codex-computer-use-linux. Install Rust/cargo or provide CODEX_LINUX_COMPUTER_USE_BACKEND_SOURCE, then run ./install.sh again."
+    [ -x "$computer_use_plugin/bin/codex-computer-use-cosmic" ] || error "Missing executable Computer Use COSMIC helper: $computer_use_plugin/bin/codex-computer-use-cosmic. Install Rust/cargo or provide CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE, then run ./install.sh again."
+
+    node - "$marketplace" <<'NODE' || error "Bundled plugin marketplace does not advertise Computer Use: $marketplace"
+const fs = require("node:fs");
+const marketplacePath = process.argv[2];
+const marketplace = JSON.parse(fs.readFileSync(marketplacePath, "utf8"));
+const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
+const computerUse = plugins.find((plugin) => plugin && plugin.name === "computer-use");
+if (!computerUse) {
+  process.exit(1);
+}
+if (computerUse.source?.source !== "local" || computerUse.source?.path !== "./plugins/computer-use") {
+  process.exit(1);
+}
+NODE
 }
 
 sed_escape_replacement() {
